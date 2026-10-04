@@ -1,0 +1,8 @@
+.venv/
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Contains account credentials - never commit
+Spec.md
