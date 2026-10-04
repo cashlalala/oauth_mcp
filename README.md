@@ -13,7 +13,7 @@ GitHub supports neither Dynamic Client Registration nor resource indicators, and
 its tokens carry no audience. MCP clients need all three, so the server uses
 FastMCP's `GitHubProvider` (an OAuth proxy):
 
-```
+```text
 MCP client ──(1) POST /mcp ──────────────► this server ── 401 + WWW-Authenticate
 MCP client ──(2) GET  /.well-known/oauth-protected-resource/mcp
 MCP client ──(3) GET  /.well-known/oauth-authorization-server
@@ -46,7 +46,7 @@ MCP client ──(8) POST /mcp + Bearer JWT ─► tools
 2. Install dependencies into the workspace venv:
 
    ```powershell
-   uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+   uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
    ```
 
 3. Configure credentials:
@@ -89,6 +89,43 @@ to confirm the server sees your GitHub identity.
 
 The tests cover the OAuth surface (401 challenge, metadata documents, client
 registration, authorize redirect) and need no real GitHub credentials.
+
+## Docker
+
+```powershell
+docker build -t oauth-mcp:dev .
+docker run --rm -p 8000:8000 --env-file .env -e HOST=0.0.0.0 oauth-mcp:dev
+```
+
+`-e HOST=0.0.0.0` overrides the `HOST=127.0.0.1` from `.env`, which would make
+the port unreachable from outside the container.
+
+OAuth state (client registrations, encrypted tokens) is written to `/data`. Mount
+a volume there to keep it across container restarts.
+
+## Kubernetes
+
+`oauth-mcp:dev` is a placeholder image name; push the image to your registry and
+update `k8s/deployment.yaml`.
+
+```powershell
+kubectl create secret generic oauth-mcp-github `
+  --from-literal=GITHUB_CLIENT_ID=<id> `
+  --from-literal=GITHUB_CLIENT_SECRET=<secret> `
+  --from-literal=JWT_SIGNING_KEY=<random string>
+kubectl apply -f k8s/
+```
+
+Before applying, set `BASE_URL` in `k8s/deployment.yaml` to the public URL of the
+server and set the GitHub OAuth app's callback URL to `{BASE_URL}/auth/callback`.
+The Service is `ClusterIP` on port 80, so it needs an Ingress or Gateway in front
+of it to be reachable at that URL.
+
+To try it without an Ingress, leave `BASE_URL` as `http://localhost:8000` and run
+`kubectl port-forward svc/oauth-mcp 8000:80`.
+
+The Deployment runs a single replica because OAuth state lives on the pod's disk.
+It uses an `emptyDir`, so replacing the pod makes clients sign in again.
 
 ## Configuration
 

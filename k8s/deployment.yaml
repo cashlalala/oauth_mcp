@@ -1,0 +1,97 @@
+# Needs a Secret with the GitHub OAuth app credentials:
+#
+#   kubectl create secret generic oauth-mcp-github \
+#     --from-literal=GITHUB_CLIENT_ID=<id> \
+#     --from-literal=GITHUB_CLIENT_SECRET=<secret> \
+#     --from-literal=JWT_SIGNING_KEY=<random string>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth-mcp
+  labels:
+    app: oauth-mcp
+spec:
+  # Keep at 1: OAuth state (client registrations, in-flight logins, tokens) is
+  # stored on the pod's disk and is not shared between replicas.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: oauth-mcp
+  template:
+    metadata:
+      labels:
+        app: oauth-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: oauth-mcp
+          # Temporary image name - replace with your registry path.
+          image: oauth-mcp:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Public URL clients use to reach the server. The GitHub OAuth app's
+            # callback URL must be {BASE_URL}/auth/callback.
+            - name: BASE_URL
+              value: "https://mcp.example.com"
+            - name: GITHUB_SCOPES
+              value: "read:user"
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-mcp-github
+                  key: GITHUB_CLIENT_ID
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-mcp-github
+                  key: GITHUB_CLIENT_SECRET
+            - name: JWT_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: oauth-mcp-github
+                  key: JWT_SIGNING_KEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /.well-known/oauth-authorization-server
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /.well-known/oauth-authorization-server
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Lost when the pod is replaced, which makes clients sign in again.
+        # Swap for a PersistentVolumeClaim to keep it.
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
