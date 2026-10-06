@@ -1,0 +1,32 @@
+# MCP example-remote-server (AUTH_MODE=external) + mock-oauth2-server as the auth server.
+#
+# The mock server derives the issuer from the request host, so the browser, the MCP
+# client and the MCP server must all reach it as http://localhost:8081. The MCP
+# container therefore shares the mock server's network namespace: inside it,
+# localhost:8081 IS the mock server. Consequently port 3232 is published on the
+# mock-oauth2-server service.
+services:
+  mock-oauth2-server:
+    image: ghcr.io/navikt/mock-oauth2-server:5.0.2
+    ports:
+      - "8081:8081"
+      - "3232:3232"   # MCP server (shares this container's network)
+    environment:
+      SERVER_PORT: "8081"
+      LOG_LEVEL: INFO
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp/Dockerfile
+    network_mode: "service:mock-oauth2-server"
+    depends_on:
+      - mock-oauth2-server
+    environment:
+      PORT: "3232"
+      BASE_URI: http://localhost:3232
+      AUTH_MODE: external
+      AUTH_SERVER_URL: http://localhost:8081/issuer1
+      INTROSPECT_CLIENT_ID: mcp-server       # mock server accepts any client credentials
+      INTROSPECT_CLIENT_SECRET: secret
+      NODE_ENV: development
