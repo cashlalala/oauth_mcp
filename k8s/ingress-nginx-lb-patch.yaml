@@ -1,0 +1,8 @@
+# Strategic-merge patch for the EXISTING ingress-nginx controller Service:
+# pins the MetalLB IP and exposes HTTPS on 8443 (-> controller's 443).
+# kubectl patch svc ingress-nginx-controller -n ingress-nginx --patch-file k8s/ingress-nginx-lb-patch.yaml
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 1.2.3.4   # or annotation metallb.universe.tf/loadBalancerIPs: 1.2.3.4
+  ports:
+    - { name: https-8443, port: 8443, protocol: TCP, targetPort: https }

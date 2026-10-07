@@ -1,0 +1,53 @@
+# TLS is terminated at ingress-nginx; backends are plain HTTP.
+# One host, split by path:
+#   /mcp, /.well-known/oauth-protected-resource[/mcp] -> MCP server (:3232)
+#   everything else (/issuer1/..., /.well-known/...)  -> DCR proxy + mock server (:8081)
+# The mock server derives the issuer from Host (+ X-Forwarded-Proto), so ingress-nginx
+# must pass the original Host (it does by default, port included).
+# Requires TLS secret `dev-auth-tls` in this namespace (see README).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oauth-mcp-auth
+  namespace: srv-mke-aigateway
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [dev-auth.meditek.inc]
+      secretName: dev-auth-tls
+  rules:
+    - host: dev-auth.meditek.inc
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: oauth-mcp, port: { number: 8081 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oauth-mcp-mcp
+  namespace: srv-mke-aigateway
+  annotations:
+    # Streamable HTTP / SSE: no buffering, long timeouts.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [dev-auth.meditek.inc]
+      secretName: dev-auth-tls
+  rules:
+    - host: dev-auth.meditek.inc
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service: { name: oauth-mcp, port: { number: 3232 } }
+          - path: /.well-known/oauth-protected-resource
+            pathType: Prefix
+            backend:
+              service: { name: oauth-mcp, port: { number: 3232 } }
